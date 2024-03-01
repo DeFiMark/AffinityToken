@@ -527,10 +527,6 @@ library BytesLib {
     }
 }
 
-// SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.0.0) (utils/structs/EnumerableSet.sol)
-// This file was procedurally generated from scripts/generate/templates/EnumerableSet.js.
-
 pragma solidity 0.8.14;
 
 /**
@@ -2145,9 +2141,13 @@ library SafeMath {
 }
 
 
-interface ISwapper {
-    function buy(address user) external payable;
-    function sell(address user) external;
+interface IFeeReceiver {
+    function trigger() external;
+}
+
+interface IDistributor {
+    function setShare(address holder, uint256 balance) external;
+    function process() external;
 }
 
 /**
@@ -2209,7 +2209,7 @@ contract AffinityToken is IERC20, Ownable {
     bool public triggerSellRecipient = false;
 
     // List of all holders
-    EnumerableSet.AddressSet public holders;
+    EnumerableSet.AddressSet internal holders;
 
     // Whether or not the contract is paused
     bool public paused;
@@ -2279,13 +2279,13 @@ contract AffinityToken is IERC20, Ownable {
 
     /** Transfer Function */
     function transfer(address recipient, uint256 amount) external override returns (bool) {
-        return _transferFrom(msg.sender, recipient, amount);
+        return _transferFromInternal(msg.sender, recipient, amount);
     }
 
     /** Transfer Function */
     function transferFrom(address sender, address recipient, uint256 amount) external override returns (bool) {
         _allowances[sender][msg.sender] = _allowances[sender][msg.sender].sub(amount, 'Insufficient Allowance');
-        return _transferFrom(sender, recipient, amount);
+        return _transferFromInternal(sender, recipient, amount);
     }
 
 
@@ -2294,13 +2294,13 @@ contract AffinityToken is IERC20, Ownable {
     /////////////////////////////////
 
 
-    function burn(uint256 amount) external returns (bool) {
-        return _burn(msg.sender, amount);
+    function burn(uint256 amount) external {
+        _burn(msg.sender, amount);
     }
 
-    function burnFrom(address account, uint256 amount) external returns (bool) {
+    function burnFrom(address account, uint256 amount) external {
         _allowances[account][msg.sender] = _allowances[account][msg.sender].sub(amount, 'Insufficient Allowance');
-        return _burn(account, amount);
+        _burn(account, amount);
     }
 
     receive() external payable {
@@ -2543,8 +2543,8 @@ contract AffinityToken is IERC20, Ownable {
 
     function viewAllHoldersAndTimeSinceSlice(uint startIndex, uint endIndex) external view returns (address[] memory, uint256[] memory timeSince, uint256[] memory balances) {
         
-        if (endIndex > holdersList.length) {
-            endIndex = holdersList.length;
+        if (endIndex > EnumerableSet.length(holders)) {
+            endIndex = EnumerableSet.length(holders);
         }
         if (startIndex > endIndex) {
             startIndex = endIndex;
@@ -2560,7 +2560,7 @@ contract AffinityToken is IERC20, Ownable {
             balances[count] = _balances[_holder];
             unchecked { ++i; ++count; }
         }
-        return (holders, timeSince, balances);
+        return (holderList, timeSince, balances);
     }
 
     //////////////////////////////////
@@ -2568,7 +2568,7 @@ contract AffinityToken is IERC20, Ownable {
     //////////////////////////////////
 
     /** Internal Transfer */
-    function _transferFrom(address sender, address recipient, uint256 amount) internal returns (bool) {
+    function _transferFromInternal(address sender, address recipient, uint256 amount) internal returns (bool) {
         require(
             recipient != address(0),
             'Zero Recipient'
@@ -2700,6 +2700,23 @@ contract AffinityToken is IERC20, Ownable {
         return true;
     }
 
+    function _mint(address account, uint256 amount) internal {
+        require(
+            account != address(0),
+            'Zero Address'
+        );
+        require(amount > 0, 'Zero Amount');
+
+        if (_balances[account] == 0) {
+            _addHolder(account);
+        }
+
+        _balances[account] += amount;
+        _totalSupply += amount;
+
+        emit Transfer(address(0), account, amount);
+    }
+
     function _removeHolder(address holder) internal {
         if (EnumerableSet.contains(holders, holder)) {
             EnumerableSet.remove(holders, holder);
@@ -2714,9 +2731,20 @@ contract AffinityToken is IERC20, Ownable {
         userInfo[holder].timeJoined = block.timestamp;
     }
 
+    function _spendAllowance(address owner, address spender, uint256 value) internal {
+        uint256 currentAllowance = _allowances[owner][spender];
+        if (currentAllowance != type(uint256).max) {
+            require(
+                currentAllowance >= value,
+                'Insufficient Allowance'
+            );
+            _allowances[owner][spender] -= value;
+        }
+    }
+
 }
 
-contract AffinityOFTV2 is BaseOFTV2, EclipseToken {
+contract AffinityOFTV2 is BaseOFTV2, AffinityToken {
     uint internal immutable ld2sdRate;
 
     constructor(
@@ -2748,7 +2776,7 @@ contract AffinityOFTV2 is BaseOFTV2, EclipseToken {
         bytes32,
         uint _amount
     ) internal virtual override returns (uint) {
-        address spender = _msgSender();
+        address spender = msg.sender;
         if (_from != spender) _spendAllowance(_from, spender, _amount);
         _burn(_from, _amount);
         return _amount;
@@ -2768,7 +2796,7 @@ contract AffinityOFTV2 is BaseOFTV2, EclipseToken {
         address _to,
         uint _amount
     ) internal override returns (uint) {
-        address spender = _msgSender();
+        address spender = msg.sender;
         // if transfer from this contract, no need to check allowance
         if (_from != address(this) && _from != spender) _spendAllowance(_from, spender, _amount);
         _transferFromInternal(_from, _to, _amount);
