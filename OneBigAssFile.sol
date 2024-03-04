@@ -1997,149 +1997,6 @@ interface IERC20 {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-library SafeMath {
-    /**
-     * @dev Returns the addition of two unsigned integers, reverting on
-     * overflow.
-     *
-     * Counterpart to Solidity's `+` operator.
-     *
-     * Requirements:
-     *
-     * - Addition cannot overflow.
-     */
-    function add(uint256 a, uint256 b) internal pure returns (uint256) {
-        uint256 c = a + b;
-        require(c >= a, "SafeMath: addition overflow");
-
-        return c;
-    }
-
-    /**
-     * @dev Returns the subtraction of two unsigned integers, reverting on
-     * overflow (when the result is negative).
-     *
-     * Counterpart to Solidity's `-` operator.
-     *
-     * Requirements:
-     *
-     * - Subtraction cannot overflow.
-     */
-    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-        return sub(a, b, "SafeMath: subtraction overflow");
-    }
-
-    /**
-     * @dev Returns the subtraction of two unsigned integers, reverting with custom message on
-     * overflow (when the result is negative).
-     *
-     * Counterpart to Solidity's `-` operator.
-     *
-     * Requirements:
-     *
-     * - Subtraction cannot overflow.
-     */
-    function sub(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-        require(b <= a, errorMessage);
-        uint256 c = a - b;
-
-        return c;
-    }
-
-    /**
-     * @dev Returns the multiplication of two unsigned integers, reverting on
-     * overflow.
-     *
-     * Counterpart to Solidity's `*` operator.
-     *
-     * Requirements:
-     *
-     * - Multiplication cannot overflow.
-     */
-    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
-        // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
-        // benefit is lost if 'b' is also tested.
-        // See: https://github.com/OpenZeppelin/openzeppelin-contracts/pull/522
-        if (a == 0) {
-            return 0;
-        }
-
-        uint256 c = a * b;
-        require(c / a == b, "SafeMath: multiplication overflow");
-
-        return c;
-    }
-
-    /**
-     * @dev Returns the integer division of two unsigned integers. Reverts on
-     * division by zero. The result is rounded towards zero.
-     *
-     * Counterpart to Solidity's `/` operator. Note: this function uses a
-     * `revert` opcode (which leaves remaining gas untouched) while Solidity
-     * uses an invalid opcode to revert (consuming all remaining gas).
-     *
-     * Requirements:
-     *
-     * - The divisor cannot be zero.
-     */
-    function div(uint256 a, uint256 b) internal pure returns (uint256) {
-        return div(a, b, "SafeMath: division by zero");
-    }
-
-    /**
-     * @dev Returns the integer division of two unsigned integers. Reverts with custom message on
-     * division by zero. The result is rounded towards zero.
-     *
-     * Counterpart to Solidity's `/` operator. Note: this function uses a
-     * `revert` opcode (which leaves remaining gas untouched) while Solidity
-     * uses an invalid opcode to revert (consuming all remaining gas).
-     *
-     * Requirements:
-     *
-     * - The divisor cannot be zero.
-     */
-    function div(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-        require(b > 0, errorMessage);
-        uint256 c = a / b;
-        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
-
-        return c;
-    }
-
-    /**
-     * @dev Returns the remainder of dividing two unsigned integers. (unsigned integer modulo),
-     * Reverts when dividing by zero.
-     *
-     * Counterpart to Solidity's `%` operator. This function uses a `revert`
-     * opcode (which leaves remaining gas untouched) while Solidity uses an
-     * invalid opcode to revert (consuming all remaining gas).
-     *
-     * Requirements:
-     *
-     * - The divisor cannot be zero.
-     */
-    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
-        return mod(a, b, "SafeMath: modulo by zero");
-    }
-
-    /**
-     * @dev Returns the remainder of dividing two unsigned integers. (unsigned integer modulo),
-     * Reverts with custom message when dividing by zero.
-     *
-     * Counterpart to Solidity's `%` operator. This function uses a `revert`
-     * opcode (which leaves remaining gas untouched) while Solidity uses an
-     * invalid opcode to revert (consuming all remaining gas).
-     *
-     * Requirements:
-     *
-     * - The divisor cannot be zero.
-     */
-    function mod(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
-        require(b != 0, errorMessage);
-        return a % b;
-    }
-}
-
 
 interface IFeeReceiver {
     function trigger() external;
@@ -2154,8 +2011,6 @@ interface IDistributor {
     Modular Upgradeable Token
  */
 contract AffinityToken is IERC20, Ownable {
-
-    using SafeMath for uint256;
 
     // total supply
     uint256 private _totalSupply = 860_000_000_000 * 10**18;
@@ -2194,7 +2049,6 @@ contract AffinityToken is IERC20, Ownable {
         bool isFeeExempt;
         bool isLiquidityPool;
         bool isSellLimitExempt;
-        bool isBlacklisted;
     }
     mapping ( address => Permissions ) public permissions;
 
@@ -2219,18 +2073,7 @@ contract AffinityToken is IERC20, Ownable {
 
     // Distributor Address
     address public distributor;
-
-    // events
-    event SetBuyFeeRecipient(address recipient);
-    event SetSellFeeRecipient(address recipient);
-    event SetTransferFeeRecipient(address recipient);
-    event SetFeeExemption(address account, bool isFeeExempt);
-    event SetSellLimitExemption(address account, bool isFeeExempt);
-    event SetAutomatedMarketMaker(address account, bool isMarketMaker);
-    event SetFees(uint256 buyFee, uint256 sellFee, uint256 transferFee);
-    event SetAutoTriggers(bool triggerBuy, bool triggerSell, bool triggerTransfer);
-    event Blacklisted(address indexed account, bool isBlacklisted);
-
+    
     constructor() {
 
         // Owner
@@ -2284,7 +2127,11 @@ contract AffinityToken is IERC20, Ownable {
 
     /** Transfer Function */
     function transferFrom(address sender, address recipient, uint256 amount) external override returns (bool) {
-        _allowances[sender][msg.sender] = _allowances[sender][msg.sender].sub(amount, 'Insufficient Allowance');
+        require(
+            _allowances[sender][msg.sender] >= amount,
+            'Insufficient Allowance'
+        );
+        _allowances[sender][msg.sender] -= amount;
         return _transferFromInternal(sender, recipient, amount);
     }
 
@@ -2299,7 +2146,11 @@ contract AffinityToken is IERC20, Ownable {
     }
 
     function burnFrom(address account, uint256 amount) external {
-        _allowances[account][msg.sender] = _allowances[account][msg.sender].sub(amount, 'Insufficient Allowance');
+        require(
+            _allowances[account][msg.sender] >= amount,
+            'Insufficient Allowance'
+        );
+        _allowances[account][msg.sender] -= amount;
         _burn(account, amount);
     }
 
@@ -2325,9 +2176,9 @@ contract AffinityToken is IERC20, Ownable {
     }
 
     function withdraw(address token) external onlyOwner {
-        require(token != address(0), 'Zero Address');
+        require(token != address(0), 'Zero');
         bool s = IERC20(token).transfer(msg.sender, IERC20(token).balanceOf(address(this)));
-        require(s, 'Failure On Token Withdraw');
+        require(s);
     }
 
     function withdrawBNB() external onlyOwner {
@@ -2336,53 +2187,36 @@ contract AffinityToken is IERC20, Ownable {
     }
 
     function setTransferFeeRecipient(address recipient) external onlyOwner {
-        require(recipient != address(0), 'Zero Address');
+        require(recipient != address(0), 'Zero');
         transferFeeRecipient = recipient;
         permissions[recipient].isFeeExempt = true;
         permissions[recipient].isSellLimitExempt = true;
-        emit SetTransferFeeRecipient(recipient);
     }
 
     function setBuyFeeRecipient(address recipient) external onlyOwner {
-        require(recipient != address(0), 'Zero Address');
+        require(recipient != address(0), 'Zero');
         buyFeeRecipient = recipient;
         permissions[recipient].isFeeExempt = true;
         permissions[recipient].isSellLimitExempt = true;
-        emit SetBuyFeeRecipient(recipient);
     }
 
     function setSellFeeRecipient(address recipient) external onlyOwner {
-        require(recipient != address(0), 'Zero Address');
+        require(recipient != address(0), 'Zero');
         sellFeeRecipient = recipient;
         permissions[recipient].isFeeExempt = true;
         permissions[recipient].isSellLimitExempt = true;
-        emit SetSellFeeRecipient(recipient);
     }
 
     function registerAutomatedMarketMaker(address account) external onlyOwner {
         require(account != address(0), 'Zero Address');
-        require(!permissions[account].isLiquidityPool, 'Already An AMM');
+        require(!permissions[account].isLiquidityPool, 'AMM');
         permissions[account].isLiquidityPool = true;
-        emit SetAutomatedMarketMaker(account, true);
     }
 
     function unRegisterAutomatedMarketMaker(address account) external onlyOwner {
         require(account != address(0), 'Zero Address');
-        require(permissions[account].isLiquidityPool, 'Not An AMM');
+        require(permissions[account].isLiquidityPool, 'Not AMM');
         permissions[account].isLiquidityPool = false;
-        emit SetAutomatedMarketMaker(account, false);
-    }
-
-    function blackListAddress(address account) external onlyOwner {
-        require(account != address(0), 'Zero Address');
-        permissions[account].isBlacklisted = true;
-        emit Blacklisted(account, true);
-    }
-
-    function removeBlackListFromAddress(address account) external onlyOwner {
-        require(account != address(0), 'Zero Address');
-        permissions[account].isBlacklisted = false;
-        emit Blacklisted(account, false);
     }
 
     function pause() external onlyOwner {
@@ -2401,7 +2235,6 @@ contract AffinityToken is IERC20, Ownable {
         triggerBuyRecipient = autoBuyTrigger;
         triggerTransferRecipient = autoTransferTrigger;
         triggerSellRecipient = autoSellTrigger;
-        emit SetAutoTriggers(autoBuyTrigger, autoSellTrigger, autoTransferTrigger);
     }
 
     function setFees(uint _buyFee, uint _sellFee, uint _transferFee) external onlyOwner {
@@ -2421,20 +2254,16 @@ contract AffinityToken is IERC20, Ownable {
         buyFee = _buyFee;
         sellFee = _sellFee;
         transferFee = _transferFee;
-
-        emit SetFees(_buyFee, _sellFee, _transferFee);
     }
 
     function setFeeExempt(address account, bool isExempt) external onlyOwner {
         require(account != address(0), 'Zero Address');
         permissions[account].isFeeExempt = isExempt;
-        emit SetFeeExemption(account, isExempt);
     }
 
     function setMaxSellLimitExempt(address account, bool isExempt) external onlyOwner {
         require(account != address(0), 'Zero Address');
         permissions[account].isSellLimitExempt = isExempt;
-        emit SetSellLimitExemption(account, isExempt);
     }
 
     function setMaxSellLimit(uint256 newLimit) external onlyOwner {
@@ -2463,27 +2292,16 @@ contract AffinityToken is IERC20, Ownable {
             return (0, address(0), false);
         }
         return permissions[sender].isLiquidityPool ? 
-               (amount.mul(buyFee).div(TAX_DENOM), buyFeeRecipient, triggerBuyRecipient) : 
+               ((amount * buyFee) / TAX_DENOM, buyFeeRecipient, triggerBuyRecipient) : 
                permissions[recipient].isLiquidityPool ? 
-               (amount.mul(sellFee).div(TAX_DENOM), sellFeeRecipient, triggerSellRecipient) :
-               (amount.mul(transferFee).div(TAX_DENOM), transferFeeRecipient, triggerTransferRecipient);
+               ((amount * sellFee) / TAX_DENOM, sellFeeRecipient, triggerSellRecipient) :
+               ((amount * transferFee) / TAX_DENOM, transferFeeRecipient, triggerTransferRecipient);
     }
 
     function timeSinceLastSale(address user) public view returns (uint256) {
         uint256 last = userInfo[user].hourStarted;
 
         return last > block.timestamp ? 0 : block.timestamp - last;
-    }
-
-    function amountSoldInLastHour(address user) public view returns (uint256) {
-        
-        uint256 timeSince = timeSinceLastSale(user);
-
-        if (timeSince >= max_sell_limit_duration) {
-            return 0;
-        } else {
-            return userInfo[user].totalSold;
-        }
     }
 
     function timeSinceJoined(address user) public view returns (uint256) {
@@ -2496,10 +2314,6 @@ contract AffinityToken is IERC20, Ownable {
 
     function getNumberOfHolders() external view returns (uint256) {
         return EnumerableSet.length(holders);
-    }
-
-    function viewAllHolders() external view returns (address[] memory) {
-        return EnumerableSet.values(holders);
     }
 
     function getHolderAtIndex(uint256 index) external view returns (address) {
@@ -2527,42 +2341,7 @@ contract AffinityToken is IERC20, Ownable {
         }
         return holderList;
     }
-
-    function viewAllHoldersAndTimeSince() external view returns (address[] memory, uint256[] memory timeSince, uint256[] memory balances) {
-        uint256 len = EnumerableSet.length(holders);
-        timeSince = new uint256[](len);
-        balances = new uint256[](len);
-        for (uint i = 0; i < len;) {
-            address _holder = EnumerableSet.at(holders, i);
-            timeSince[i] = timeSinceJoined(_holder);
-            balances[i] = _balances[_holder];
-            unchecked { ++i; }
-        }
-        return (EnumerableSet.values(holders), timeSince, balances);
-    }
-
-    function viewAllHoldersAndTimeSinceSlice(uint startIndex, uint endIndex) external view returns (address[] memory, uint256[] memory timeSince, uint256[] memory balances) {
-        
-        if (endIndex > EnumerableSet.length(holders)) {
-            endIndex = EnumerableSet.length(holders);
-        }
-        if (startIndex > endIndex) {
-            startIndex = endIndex;
-        }
-        address[] memory holderList = new address[](endIndex - startIndex);
-        timeSince = new uint256[](endIndex - startIndex);
-        balances = new uint256[](endIndex - startIndex);
-        uint count = 0;
-        for (uint i = startIndex; i < endIndex;) {
-            address _holder = EnumerableSet.at(holders, i);
-            holderList[count] = _holder;
-            timeSince[count] = timeSinceJoined(_holder);
-            balances[count] = _balances[_holder];
-            unchecked { ++i; ++count; }
-        }
-        return (holderList, timeSince, balances);
-    }
-
+    
     //////////////////////////////////
     /////   INTERNAL FUNCTIONS   /////
     //////////////////////////////////
@@ -2584,10 +2363,6 @@ contract AffinityToken is IERC20, Ownable {
         require(
             paused == false || msg.sender == this.getOwner(),
             'Paused'
-        );
-        require(
-            permissions[sender].isBlacklisted == false && permissions[recipient].isBlacklisted == false,
-            'Blacklisted'
         );
         
         // decrement sender balance
@@ -2682,13 +2457,13 @@ contract AffinityToken is IERC20, Ownable {
             'Zero Amount'
         );
         require(
-            amount <= balanceOf(account),
+            amount <= _balances[account],
             'Insufficient Balance'
         );
 
         // delete from balance and supply
-        _balances[account] = _balances[account].sub(amount, 'Balance Underflow');
-        _totalSupply = _totalSupply.sub(amount, 'Supply Underflow');
+        _balances[account] -= amount;
+        _totalSupply -= amount;
 
         // remove account
         if (_balances[account] == 0) {
@@ -2752,7 +2527,7 @@ contract AffinityOFTV2 is BaseOFTV2, AffinityToken {
         address _lzEndpoint
     ) AffinityToken() BaseOFTV2(_sharedDecimals, _lzEndpoint) {
         uint8 decimals = 9;
-        require(_sharedDecimals <= decimals, "OFT: sharedDecimals must be <= decimals");
+        require(_sharedDecimals <= decimals, "OFT: sharedDecimals");
         ld2sdRate = 10**(decimals - _sharedDecimals);
     }
 
