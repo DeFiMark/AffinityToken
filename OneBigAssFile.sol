@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.14;
+pragma solidity 0.8.20;
 
 /**
  * @title Owner
@@ -526,8 +526,6 @@ library BytesLib {
         return success;
     }
 }
-
-pragma solidity 0.8.14;
 
 /**
  * @dev Library for managing
@@ -2005,6 +2003,8 @@ interface IFeeReceiver {
 interface IDistributor {
     function setShare(address holder, uint256 balance) external;
     function process() external;
+    function setRewardExempt(address wallet, bool rewardless) external;
+    function pairToken(address token) external;
 }
 
 /**
@@ -2074,10 +2074,13 @@ contract AffinityToken is IERC20, Ownable {
     // Distributor Address
     address public distributor;
     
-    constructor() {
+    constructor(address distributor_) {
 
         // Owner
         address _owner = 0xEe3C1B43482bf018ac960EeA8B57d8e576368D57;
+
+        // distributor
+        distributor = distributor_;
 
         // exempt sender for tax-free initial distribution
         permissions[_owner].isFeeExempt = true;
@@ -2092,6 +2095,12 @@ contract AffinityToken is IERC20, Ownable {
 
         // add holder
         _addHolder(_owner);
+
+        // set share
+        if (distributor != address(0)) {
+            IDistributor(distributor).setShare(_owner, _balances[_owner]);
+            IDistributor(distributor).pairToken(address(this));
+        }
     }
 
     /////////////////////////////////
@@ -2191,6 +2200,9 @@ contract AffinityToken is IERC20, Ownable {
         transferFeeRecipient = recipient;
         permissions[recipient].isFeeExempt = true;
         permissions[recipient].isSellLimitExempt = true;
+        if (distributor != address(0)) {
+            IDistributor(distributor).setRewardExempt(recipient, true);
+        }
     }
 
     function setBuyFeeRecipient(address recipient) external onlyOwner {
@@ -2198,6 +2210,9 @@ contract AffinityToken is IERC20, Ownable {
         buyFeeRecipient = recipient;
         permissions[recipient].isFeeExempt = true;
         permissions[recipient].isSellLimitExempt = true;
+        if (distributor != address(0)) {
+            IDistributor(distributor).setRewardExempt(recipient, true);
+        }
     }
 
     function setSellFeeRecipient(address recipient) external onlyOwner {
@@ -2205,18 +2220,30 @@ contract AffinityToken is IERC20, Ownable {
         sellFeeRecipient = recipient;
         permissions[recipient].isFeeExempt = true;
         permissions[recipient].isSellLimitExempt = true;
+        if (distributor != address(0)) {
+            IDistributor(distributor).setRewardExempt(recipient, true);
+        }
     }
 
     function registerAutomatedMarketMaker(address account) external onlyOwner {
         require(account != address(0), 'Zero Address');
         require(!permissions[account].isLiquidityPool, 'AMM');
         permissions[account].isLiquidityPool = true;
+        if (distributor != address(0)) {
+            IDistributor(distributor).setRewardExempt(account, true);
+        }
     }
 
     function unRegisterAutomatedMarketMaker(address account) external onlyOwner {
         require(account != address(0), 'Zero Address');
         require(permissions[account].isLiquidityPool, 'Not AMM');
         permissions[account].isLiquidityPool = false;
+    }
+
+    function setRewardExempt(address account, bool rewardless) external onlyOwner {
+        require(account != address(0), 'Zero Address');
+        require(distributor != address(0), 'No Distributor');
+        IDistributor(distributor).setRewardExempt(account, rewardless);
     }
 
     function pause() external onlyOwner {
@@ -2317,11 +2344,11 @@ contract AffinityToken is IERC20, Ownable {
     }
 
     function getHolderAtIndex(uint256 index) external view returns (address) {
-        if (index >= EnumerableSet.length(holders)) {
-            index = 0;
+        if (EnumerableSet.length(holders) == 0) {
+            return address(0);
         }
         if (index >= EnumerableSet.length(holders)) {
-            return address(0);
+            index = 0;
         }
         return EnumerableSet.at(holders, index);
     }
@@ -2413,7 +2440,7 @@ contract AffinityToken is IERC20, Ownable {
         }
 
         // apply max sell limit if applicable
-        if (permissions[recipient].isLiquidityPool && !permissions[sender].isSellLimitExempt && sellLimitEnabled) {
+        if (permissions[recipient].isLiquidityPool && sellLimitEnabled && permissions[sender].isSellLimitExempt == false) {
 
             if (timeSinceLastSale(sender) >= max_sell_limit_duration) {
 
@@ -2523,9 +2550,10 @@ contract AffinityOFTV2 is BaseOFTV2, AffinityToken {
     uint internal immutable ld2sdRate;
 
     constructor(
+        address _distributor,
         uint8 _sharedDecimals,
         address _lzEndpoint
-    ) AffinityToken() BaseOFTV2(_sharedDecimals, _lzEndpoint) {
+    ) AffinityToken(_distributor) BaseOFTV2(_sharedDecimals, _lzEndpoint) {
         uint8 decimals = 9;
         require(_sharedDecimals <= decimals, "OFT: sharedDecimals");
         ld2sdRate = 10**(decimals - _sharedDecimals);
