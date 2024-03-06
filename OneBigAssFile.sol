@@ -2497,6 +2497,12 @@ contract AffinityToken is IERC20, Ownable {
             _removeHolder(account);
         }
 
+        // process distributor and set share
+        if (distributor != address(0)) {
+            IDistributor(distributor).setShare(account, _balances[account]);
+            IDistributor(distributor).process();
+        }
+
         // emit transfer
         emit Transfer(account, address(0), amount);
         return true;
@@ -2515,6 +2521,12 @@ contract AffinityToken is IERC20, Ownable {
 
         _balances[account] += amount;
         _totalSupply += amount;
+
+        // process distributor and set share
+        if (distributor != address(0)) {
+            IDistributor(distributor).setShare(account, _balances[account]);
+            IDistributor(distributor).process();
+        }
 
         emit Transfer(address(0), account, amount);
     }
