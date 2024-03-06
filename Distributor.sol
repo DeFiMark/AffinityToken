@@ -40,7 +40,7 @@ contract Distributor is ReentrancyGuard {
     uint256 public currentIndex;
     
     modifier onlyToken() {
-        require(msg.sender == affinity); 
+        require(msg.sender == affinity, 'Not Permitted'); 
         _;
     }
     
@@ -118,40 +118,31 @@ contract Distributor is ReentrancyGuard {
         _process(iterations_per_transfer);
     }
 
-    function processSetNumberOfIterations(uint256 iterations) {
+    function processSetNumberOfIterations(uint256 iterations) external {
         _process(iterations);
     }
 
     function _process(uint256 iterations) internal {
+        uint256 shareholderCount = IAffinity(affinity).getNumberOfHolders();
+        if(shareholderCount == 0) { return; }
 
+        for (uint i = 0; i < iterations;) {
+
+            // if index overflows, reset to 0
+            if (currentIndex >= shareholderCount) {
+                currentIndex = 0;
+            }
+
+            // fetch holder at current index
+            address holder = IAffinity(affinity).getHolderAtIndex(currentIndex);
+
+            if (holder != address(0) && shouldDistribute(holder) && !Address.isContract(holder)) {
+                claimRewards(holder);
+            }
+
+            unchecked { ++i; ++currentIndex; }
+        }
     }
-    
-    // function process(uint256 gas) external override {
-    //     uint256 shareholderCount = shareholders.length;
-
-    //     if(shareholderCount == 0) { return; }
-
-    //     uint256 gasUsed = 0;
-    //     uint256 gasLeft = gasleft();
-
-    //     uint256 iterations = 0;
-        
-    //     while(gasUsed < gas && iterations < shareholderCount) {
-    //         if(currentIndex >= shareholderCount){
-    //             currentIndex = 0;
-    //         }
-            
-    //         if(shouldDistribute(shareholders[currentIndex])){
-    //             claimRewards(shareholders[currentIndex]);
-    //         }
-            
-    //         gasUsed += (gasLeft - gasleft());
-    //         gasLeft = gasleft();
-    //         currentIndex++;
-    //         iterations++;
-    //     }
-    // }
-
 
     ///////////////////////////////////////////////
     //////////    Internal Functions    ///////////
@@ -166,25 +157,6 @@ contract Distributor is ReentrancyGuard {
         if(amount > 0){
             payable(shareholder).transfer(amount);
         }
-    }
-
-    function _reinvestRewards() private {
-        require(shareholderClaims[msg.sender] + minAutoPeriod < block.number, 'Timeout');
-        require(userInfo[msg.sender].balance > 0, 'Zero Balance');
-        uint256 amount = pendingRewards(msg.sender);
-        require(amount > 0, 'Zero To Claim');
-
-        userInfo[msg.sender].totalExcluded = getCumulativeDividends(userInfo[msg.sender].balance);
-        shareholderClaims[msg.sender] = block.number;
-
-        uint256 before = IERC20(_token).balanceOf(address(this));
-        (bool s,) = payable(_token).call{value: amount}("");
-        require(s, 'Failure on BNB Received');
-
-        uint256 diff = IERC20(_token).balanceOf(address(this)) - before;
-        require(diff > 0, 'Zero Tokens Purchased');
-
-        IERC20(_token).transfer(msg.sender, diff);
     }
     
     ///////////////////////////////////////////////
@@ -210,7 +182,7 @@ contract Distributor is ReentrancyGuard {
 
         if(shareholderTotalDividends <= shareholderTotalExcluded){ return 0; }
 
-        return shareholderTotalDividends.sub(shareholderTotalExcluded);
+        return shareholderTotalDividends - shareholderTotalExcluded;
     }
     
     function getCumulativeDividends(uint256 share) internal view returns (uint256) {
