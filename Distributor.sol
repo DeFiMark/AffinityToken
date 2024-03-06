@@ -407,6 +407,7 @@ contract Distributor is ReentrancyGuard {
     struct UserInfo {
         uint256 balance;
         uint256 totalClaimed;
+        uint256 totalClaimedTokens;
         uint256 totalExcluded;
         uint256 totalExcludedToken;
         bool isRewardExempt;
@@ -585,9 +586,15 @@ contract Distributor is ReentrancyGuard {
         if (amountBNB > 0) {
             (bool s,) = payable(shareholder).call{value: amountBNB}("");
             require(s);
+            unchecked {
+                userInfo[shareholder].totalClaimed += amountBNB;
+            }
         }
         if (amountTokens > 0) {
             IERC20(rewardToken).transfer(shareholder, amountTokens);
+            unchecked {
+                userInfo[shareholder].totalClaimedTokens += amountTokens;
+            }
         }
     }
 
