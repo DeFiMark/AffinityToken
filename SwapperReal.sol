@@ -15,7 +15,7 @@ interface IWETH {
     function withdraw(uint256 amount) external;
 }
 
-contract DEXSwapper is Ownable {
+contract AffinitySwapper is Ownable {
 
     using SafeMath for uint256;
 
@@ -44,6 +44,7 @@ contract DEXSwapper is Ownable {
     }
 
     function registerAffiliate(address recipient, uint fee_) external onlyOwner {
+        require(fee_ < 100, 'Fee Too High');
         affiliates[recipient].isApproved = true;
         affiliates[recipient].fee = fee_;
     }
@@ -54,7 +55,7 @@ contract DEXSwapper is Ownable {
 
     function setFee(uint256 newFee) external onlyOwner {
         require(
-            newFee <= 200,
+            newFee <= FeeDenominator / 10,
             'Fee Too High'
         );
         fee = newFee;
@@ -68,23 +69,21 @@ contract DEXSwapper is Ownable {
         feeReceiver = newFeeRecipient;
     }
 
-    function swapETHForToken(address feeRecipient, address DEX, address token, uint256 amountOutMin, address recipient) external payable {
+    function swapETHForToken(address DEX, address token, uint256 amountOutMin, address recipient, address ref) external payable {
         require(
             msg.value > 0,
             'Zero Value'
         );
-        uint _fee = getFee(msg.value);
-        if (feeRecipient != feeReceiver) {
-            require(
-                affiliates[feeRecipient].isApproved,
-                'Not Approved Affiliate'
-            );
-
-            uint hFee = _fee * affiliates[feeRecipient].fee / 100;
-            if (hFee > 0) {
-                _sendETH(feeRecipient, hFee);
+        uint _totalFee = getFee(msg.value);
+        uint _fee = _totalFee;
+        if (ref != feeReceiver && ref != address(0)) {
+            if (affiliates[ref].isApproved) {
+                uint hFee = ( _totalFee * affiliates[ref].fee ) / 100;
+                _fee = _totalFee - hFee;
+                if (hFee > 0) {
+                    _sendETH(ref, hFee);
+                }
             }
-            _fee = _fee - hFee;
         }
         _sendETH(feeReceiver, _fee);
 
@@ -97,19 +96,19 @@ contract DEXSwapper is Ownable {
         path[1] = token;
 
         // make the swap
-        router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value - _fee}(amountOutMin, path, recipient, block.timestamp + 300);
+        router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value - _totalFee}(amountOutMin, path, recipient, block.timestamp + 300);
 
         // save memory
         delete path;
     }
 
-    function swapTokenForETH(address feeRecipient, address DEX, address token, uint256 amount, uint256 amountOutMin, address recipient) external {
+    function swapTokenForETH(address DEX, address token, uint256 amount, uint256 amountOutMin, address recipient, address ref) external {
         require(
             amount > 0,
             'Zero Value'
         );
 
-        address fRecipient_ = feeRecipient;
+        address _ref = ref;
 
         // liquidity pool
         IPair pair = IPair(IUniswapV2Factory(IUniswapV2Router02(DEX).factory()).getPair(token, WETH));
@@ -138,24 +137,22 @@ contract DEXSwapper is Ownable {
         IWETH(WETH).withdraw(amountOut);
         
         // take fee in bnb and send rest to sender
-        uint _fee = getFee(amountOut);
-        if (fRecipient_ != feeReceiver) {
-            require(
-                affiliates[fRecipient_].isApproved,
-                'Not Approved Affiliate'
-            );
-
-            uint hFee = _fee * affiliates[fRecipient_].fee / 100;
-            if (hFee > 0) {
-                _sendETH(fRecipient_, hFee);
+        uint _totalFee = getFee(amountOut);
+        uint _fee = _totalFee;
+        if (ref != feeReceiver && ref != address(0)) {
+            if (affiliates[ref].isApproved) {
+                uint hFee = ( _totalFee * affiliates[_ref].fee ) / 100;
+                _fee = _totalFee - hFee;
+                if (hFee > 0) {
+                    _sendETH(_ref, hFee);
+                }
             }
-            _fee = _fee - hFee;
         }
         _sendETH(feeReceiver, _fee);
-        _sendETH(recipient, amountOut - _fee);
+        _sendETH(recipient, amountOut - _totalFee);
     }
 
-    function swapTokenForToken(address feeRecipient, address DEX, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, address recipient) external {
+    function swapTokenForToken(address DEX, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, address recipient, address ref) external {
         require(
             amountIn > 0,
             'Zero Value'
@@ -164,24 +161,22 @@ contract DEXSwapper is Ownable {
         address recipient_ = recipient;
 
         // fetch fee and transfer in to receiver
-        uint _fee = getFee(amountIn);
-        if (feeRecipient != feeReceiver) {
-            require(
-                affiliates[feeRecipient].isApproved,
-                'Not Approved Affiliate'
-            );
-
-            uint hFee = _fee * affiliates[feeRecipient].fee / 100;
-            if (hFee > 0) {
-                _transferIn(msg.sender, feeRecipient, tokenIn, hFee);
+        uint _totalFee = getFee(amountIn);
+        uint _fee = _totalFee;
+        if (ref != feeReceiver && ref != address(0)) {
+            if (affiliates[ref].isApproved) {
+                uint hFee = _totalFee * affiliates[ref].fee / 100;
+                if (hFee > 0) {
+                    _transferIn(msg.sender, ref, tokenIn, hFee);
+                }
+                _fee = _fee - hFee;
             }
-            _fee = _fee - hFee;
         }
         _transferIn(msg.sender, feeReceiver, tokenIn, _fee);
 
         // transfer rest into liquidity pool
         IPair pair = IPair(IUniswapV2Factory(IUniswapV2Router02(DEX).factory()).getPair(tokenIn, tokenOut_));
-        _transferIn(msg.sender, address(pair), tokenIn, amountIn - _fee);
+        _transferIn(msg.sender, address(pair), tokenIn, amountIn - _totalFee);
 
         // handle swap logic
         (address input, address output) = (tokenIn, tokenOut_);
