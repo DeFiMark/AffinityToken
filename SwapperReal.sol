@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.4;
+pragma solidity 0.8.20;
 
 import "./IUniswapV2Router02.sol";
 import "./Ownable.sol";
@@ -20,7 +20,8 @@ contract AffinitySwapper is Ownable {
     using SafeMath for uint256;
 
     // Fee Taken On Swaps
-    uint256 public fee                     = 35;
+    uint256 public fee                     = 75;
+    uint256 public defaultReferralFee      = 25;
     uint256 public constant FeeDenominator = 10000;
 
     // Fee Recipient
@@ -67,6 +68,23 @@ contract AffinitySwapper is Ownable {
             'Zero Address'
         );
         feeReceiver = newFeeRecipient;
+    }
+
+    function setDefaultReferralFee(uint256 newFee) external onlyOwner {
+        require(
+            newFee < 100,
+            'Fee Too High'
+        );
+        defaultReferralFee = newFee;
+    }
+
+    function registerSelfAffiliate() external {
+        require(
+            affiliates[address(0)].isApproved,
+            'Not Approved'
+        );
+        affiliates[msg.sender].isApproved = true;
+        affiliates[msg.sender].fee = defaultReferralFee;
     }
 
     function swapETHForToken(address DEX, address token, uint256 amountOutMin, address recipient, address ref) external payable {
