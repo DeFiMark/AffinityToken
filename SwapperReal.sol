@@ -21,14 +21,19 @@ contract AffinitySwapper is Ownable {
 
     // Fee Taken On Swaps
     uint256 public fee                     = 75;
+    uint256 public affinityBuyFee          = 200;
+    uint256 public affinitySellFee         = 700;
     uint256 public defaultReferralFee      = 25;
     uint256 public constant FeeDenominator = 10000;
 
     // Fee Recipient
-    address public feeReceiver;
+    address public feeReceiver = 0x66cF1ef841908873C34e6bbF1586F4000b9fBB5D;
 
     // WETH
-    address public immutable WETH;
+    address public constant WETH = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
+
+    // Affinity Token
+    address public constant affinity = 0xF59918B07278ff20109f8c37d7255e0677B45c43;
 
     // Affiliate
     struct Affiliate {
@@ -36,13 +41,6 @@ contract AffinitySwapper is Ownable {
         uint fee;
     }
     mapping ( address => Affiliate ) public affiliates;
-
-    constructor(address WETH_, address feeReceiver_) {
-        require(WETH_ != address(0), 'Zero Address');
-        require(feeReceiver_ != address(0), 'Zero Address');
-        WETH = WETH_;
-        feeReceiver = feeReceiver_;
-    }
 
     function registerAffiliate(address recipient, uint fee_) external onlyOwner {
         require(fee_ < 100, 'Fee Too High');
@@ -78,6 +76,22 @@ contract AffinitySwapper is Ownable {
         defaultReferralFee = newFee;
     }
 
+    function setAffinityBuyFee(uint256 newFee) external onlyOwner {
+        require(
+            newFee < FeeDenominator / 10,
+            'Fee Too High'
+        );
+        affinityBuyFee = newFee;
+    }
+
+    function setAffinitySellFee(uint256 newFee) external onlyOwner {
+        require(
+            newFee < FeeDenominator / 10,
+            'Fee Too High'
+        );
+        affinitySellFee = newFee;
+    }
+
     function registerSelfAffiliate() external {
         require(
             affiliates[address(0)].isApproved,
@@ -92,32 +106,51 @@ contract AffinitySwapper is Ownable {
             msg.value > 0,
             'Zero Value'
         );
-        uint _totalFee = getFee(msg.value);
-        uint _fee = _totalFee;
-        if (ref != feeReceiver && ref != address(0)) {
-            if (affiliates[ref].isApproved) {
-                uint hFee = ( _totalFee * affiliates[ref].fee ) / 100;
-                _fee = _totalFee - hFee;
-                if (hFee > 0) {
-                    _sendETH(ref, hFee);
+
+        if (token == affinity) {
+            uint256 _totalFee = ( msg.value * ( affinityBuyFee + fee ) ) / FeeDenominator;
+            _sendETH(feeReceiver, _totalFee);
+
+            // define swap path
+            address[] memory path = new address[](2);
+            path[0] = WETH;
+            path[1] = affinity;
+
+            // make the swap
+            IUniswapV2Router02(DEX).swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value - _totalFee}(amountOutMin, path, address(this), block.timestamp + 300);
+
+            // save memory
+            delete path;
+
+            // send affinity to recipient
+            IERC20(affinity).transfer(recipient, IERC20(affinity).balanceOf(address(this)));
+        } else {
+
+            uint _totalFee = getFee(msg.value);
+            uint _fee = _totalFee;
+            if (ref != feeReceiver && ref != address(0)) {
+                if (affiliates[ref].isApproved) {
+                    uint hFee = ( _totalFee * affiliates[ref].fee ) / 100;
+                    _fee = _totalFee - hFee;
+                    if (hFee > 0) {
+                        _sendETH(ref, hFee);
+                    }
                 }
             }
+            _sendETH(feeReceiver, _fee);
+
+            // define swap path
+            address[] memory path = new address[](2);
+            path[0] = WETH;
+            path[1] = token;
+
+            // make the swap
+            IUniswapV2Router02(DEX).swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value - _totalFee}(amountOutMin, path, recipient, block.timestamp + 300);
+
+            // save memory
+            delete path;
+            
         }
-        _sendETH(feeReceiver, _fee);
-
-        // instantiate router
-        IUniswapV2Router02 router = IUniswapV2Router02(DEX);
-
-        // define swap path
-        address[] memory path = new address[](2);
-        path[0] = WETH;
-        path[1] = token;
-
-        // make the swap
-        router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value - _totalFee}(amountOutMin, path, recipient, block.timestamp + 300);
-
-        // save memory
-        delete path;
     }
 
     function swapTokenForETH(address DEX, address token, uint256 amount, uint256 amountOutMin, address recipient, address ref) external {
@@ -125,6 +158,19 @@ contract AffinitySwapper is Ownable {
             amount > 0,
             'Zero Value'
         );
+
+        if (token == affinity) {
+            uint256 received = _transferIn(msg.sender, address(this), token, amount);
+            IERC20(affinity).approve(DEX, received);
+            address[] memory sellPath = new address[](2);
+            sellPath[0] = affinity;
+            sellPath[1] = WETH;
+            IUniswapV2Router02(DEX).swapExactTokensForETHSupportingFeeOnTransferTokens(received, amountOutMin, sellPath, address(this), block.timestamp + 300);
+            uint256 _totalFee = ( address(this).balance * ( affinitySellFee + fee ) ) / FeeDenominator;
+            _sendETH(feeReceiver, _totalFee);
+            _sendETH(recipient, address(this).balance);
+            return;
+        }
 
         address _ref = ref;
 
@@ -245,13 +291,13 @@ contract AffinitySwapper is Ownable {
 
     function _transferIn(address fromUser, address toUser, address token, uint256 amount) internal returns (uint256) {
         uint before = IERC20(token).balanceOf(toUser);
-        bool s = IERC20(token).transferFrom(fromUser, toUser, amount);
-        uint received = IERC20(token).balanceOf(toUser) - before;
+        IERC20(token).transferFrom(fromUser, toUser, amount);
+        uint After = IERC20(token).balanceOf(toUser) - before;
         require(
-            s && received > 0 && received <= amount,
+            After > before,
             'Error On Transfer From'
         );
-        return received;
+        return After - before;
     }
 
     receive() external payable {}
